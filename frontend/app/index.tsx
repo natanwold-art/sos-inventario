@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   View,
   Text,
@@ -6,14 +7,17 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { logoutUser } from '../src/services/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../src/constants/theme';
 import {
   getProductCount,
   getLowStockCount,
   getRecentMovements,
+  getTotalInventoryValue,
+  getLowStockInventoryValue,
   Movement,
 } from '../src/database/db';
 
@@ -22,31 +26,58 @@ export default function Dashboard() {
   const [productCount, setProductCount] = useState(0);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [recentMovements, setRecentMovements] = useState<Movement[]>([]);
+  const [totalInventoryValue, setTotalInventoryValue] = useState(0);
+  const [lowStockInventoryValue, setLowStockInventoryValue] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
-      const [products, lowStock, movements] = await Promise.all([
+      const [products, lowStock, movements, totalValue, riskValue] = await Promise.all([
         getProductCount(),
         getLowStockCount(),
         getRecentMovements(5),
+        getTotalInventoryValue(),
+        getLowStockInventoryValue(),
       ]);
+
       setProductCount(products);
       setLowStockCount(lowStock);
       setRecentMovements(movements);
+      setTotalInventoryValue(totalValue);
+      setLowStockInventoryValue(riskValue);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Sair',
+      'Deseja sair da sua conta?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Sair',
+          style: 'destructive',
+          onPress: async () => {
+            await logoutUser();
+            router.replace('/login' as any);
+          },
+        },
+      ]
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -59,6 +90,13 @@ export default function Dashboard() {
     });
   };
 
+  const formatCurrency = (value: number) => {
+    return value.toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -67,7 +105,128 @@ export default function Dashboard() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
       }
     >
-      {/* Stats Cards */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.appTitle}>SOS Inventário</Text>
+          <Text style={styles.appSubtitle}>Controle seu estoque em segundos</Text>
+        </View>
+
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={20} color={COLORS.text} />
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity
+        style={styles.heroButton}
+        onPress={() => router.push('/scanner')}
+        activeOpacity={0.85}
+      >
+        <View style={styles.heroIconWrap}>
+          <Ionicons name="barcode-outline" size={30} color="#FFFFFF" />
+        </View>
+        <View style={styles.heroTextWrap}>
+          <Text style={styles.heroTitle}>ESCANEAR PRODUTO</Text>
+          <Text style={styles.heroSubtitle}>
+            Registre entradas e saídas com rapidez
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      <View style={styles.insightCard}>
+        <Text style={styles.insightTitle}>📊 Resumo do seu estoque</Text>
+
+        <View style={styles.insightRow}>
+          <Text style={styles.insightLabel}>Total de produtos:</Text>
+          <Text style={styles.insightValue}>{productCount}</Text>
+        </View>
+
+        <View style={styles.insightRow}>
+          <Text style={styles.insightLabel}>Itens em estoque baixo:</Text>
+          <Text style={[styles.insightValue, lowStockCount > 0 && styles.insightDanger]}>
+            {lowStockCount}
+          </Text>
+        </View>
+
+        <View style={styles.insightDivider} />
+
+        <Text style={styles.insightTip}>
+          {lowStockCount > 0
+            ? 'Seu estoque precisa de atenção. Verifique agora os produtos para reposição e evite perder vendas.'
+            : 'Seu estoque está sob controle. Continue registrando entradas e saídas para manter tudo atualizado.'}
+        </Text>
+
+        {lowStockCount > 0 && (
+          <TouchableOpacity
+            style={styles.restockButton}
+            onPress={() => router.push('/alerts')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.restockText}>🛒 Ver produtos para reposição</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {lowStockCount > 0 && (
+        <TouchableOpacity
+          style={styles.warningBanner}
+          onPress={() => router.push('/alerts')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="warning" size={22} color="#FFFFFF" />
+          <View style={styles.warningTextWrap}>
+            <Text style={styles.warningTitle}>⚠️ Produto acabando</Text>
+            <Text style={styles.warningSubtitle}>
+              Você tem {lowStockCount} {lowStockCount === 1 ? 'item com' : 'itens com'} estoque baixo
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
+      <View style={styles.attentionCard}>
+        <View style={styles.attentionHeader}>
+          <Ionicons name="flash-outline" size={20} color={COLORS.primary} />
+          <Text style={styles.attentionTitle}>Atenção hoje</Text>
+        </View>
+
+        <Text style={styles.attentionText}>
+          {lowStockCount > 0
+            ? `Você já tem ${lowStockCount} ${lowStockCount === 1 ? 'item precisando' : 'itens precisando'} de reposição. Conferir isso agora pode evitar perda de venda no balcão.`
+            : 'Nenhum alerta crítico no momento. Esse é o melhor cenário para manter a operação organizada.'}
+        </Text>
+      </View>
+
+      <Text style={styles.sectionTitle}>Visão Financeira</Text>
+      <View style={styles.financeContainer}>
+        <View style={styles.financeCard}>
+          <View style={styles.financeIconWrap}>
+            <Ionicons name="wallet-outline" size={24} color={COLORS.primary} />
+          </View>
+          <Text style={styles.financeLabel}>Valor total em estoque</Text>
+          <Text style={styles.financeValue}>{formatCurrency(totalInventoryValue)}</Text>
+        </View>
+
+        <View style={[styles.financeCard, lowStockInventoryValue > 0 && styles.financeCardWarning]}>
+          <View style={styles.financeIconWrap}>
+            <Ionicons
+              name="trending-down-outline"
+              size={24}
+              color={lowStockInventoryValue > 0 ? COLORS.danger : COLORS.warning}
+            />
+          </View>
+          <Text style={styles.financeLabel}>Valor em risco</Text>
+          <Text
+            style={[
+              styles.financeValue,
+              lowStockInventoryValue > 0 && styles.financeValueDanger,
+            ]}
+          >
+            {formatCurrency(lowStockInventoryValue)}
+          </Text>
+        </View>
+      </View>
+
       <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
@@ -94,7 +253,6 @@ export default function Dashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Quick Actions */}
       <Text style={styles.sectionTitle}>Ações Rápidas</Text>
       <View style={styles.actionsContainer}>
         <TouchableOpacity
@@ -102,7 +260,7 @@ export default function Dashboard() {
           onPress={() => router.push('/scanner')}
         >
           <Ionicons name="barcode-outline" size={40} color="#FFFFFF" />
-          <Text style={styles.actionTextWhite}>Escanear{"\n"}Produto</Text>
+          <Text style={styles.actionTextWhite}>Escanear{'\n'}Produto</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -110,7 +268,7 @@ export default function Dashboard() {
           onPress={() => router.push('/product/add')}
         >
           <Ionicons name="add-circle-outline" size={40} color={COLORS.primary} />
-          <Text style={styles.actionText}>Cadastrar{"\n"}Manual</Text>
+          <Text style={styles.actionText}>Cadastrar{'\n'}Manual</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -118,11 +276,10 @@ export default function Dashboard() {
           onPress={() => router.push('/products')}
         >
           <Ionicons name="list-outline" size={40} color={COLORS.primary} />
-          <Text style={styles.actionText}>Lista de{"\n"}Produtos</Text>
+          <Text style={styles.actionText}>Lista de{'\n'}Produtos</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Recent Movements */}
       <View style={styles.recentSection}>
         <Text style={styles.sectionTitle}>Movimentações Recentes</Text>
         {recentMovements.length === 0 ? (
@@ -153,7 +310,8 @@ export default function Dashboard() {
                   movement.type === 'entrada' ? styles.quantityIn : styles.quantityOut,
                 ]}
               >
-                {movement.type === 'entrada' ? '+' : '-'}{movement.quantity}
+                {movement.type === 'entrada' ? '+' : '-'}
+                {movement.quantity}
               </Text>
             </View>
           ))
@@ -170,6 +328,204 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: SPACING.md,
+    paddingBottom: SPACING.xl,
+  },
+  header: {
+    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  appTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  appSubtitle: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textSecondary,
+  },
+  logoutButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  heroButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  heroIconWrap: {
+    marginRight: SPACING.md,
+  },
+  heroTextWrap: {
+    flex: 1,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  heroSubtitle: {
+    color: '#EAFBF1',
+    fontSize: FONT_SIZES.sm,
+  },
+  insightCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  insightTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  insightLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  insightValue: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  insightDanger: {
+    color: COLORS.danger,
+  },
+  insightDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.md,
+  },
+  insightTip: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  restockButton: {
+    backgroundColor: COLORS.primary,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    marginTop: SPACING.md,
+  },
+  restockText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  warningBanner: {
+    backgroundColor: COLORS.danger,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  warningTextWrap: {
+    flex: 1,
+    marginLeft: SPACING.sm,
+  },
+  warningTitle: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+  },
+  warningSubtitle: {
+    color: '#FFEAEA',
+    fontSize: FONT_SIZES.sm,
+    marginTop: 2,
+  },
+  attentionCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  attentionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  attentionTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  attentionText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  financeContainer: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  financeCard: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  financeCardWarning: {
+    borderWidth: 2,
+    borderColor: COLORS.danger,
+  },
+  financeIconWrap: {
+    marginBottom: SPACING.sm,
+  },
+  financeLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+  },
+  financeValue: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  financeValueDanger: {
+    color: COLORS.danger,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -205,10 +561,11 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     marginTop: SPACING.xs,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: FONT_SIZES.lg,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.text,
     marginBottom: SPACING.md,
   },
@@ -240,7 +597,7 @@ const styles = StyleSheet.create({
   },
   actionTextWhite: {
     fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
     marginTop: SPACING.sm,
@@ -287,7 +644,7 @@ const styles = StyleSheet.create({
   },
   movementProduct: {
     fontSize: FONT_SIZES.md,
-    fontWeight: '500',
+    fontWeight: '600',
     color: COLORS.text,
   },
   movementDate: {

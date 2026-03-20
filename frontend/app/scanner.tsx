@@ -1,170 +1,135 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Alert,
-  Modal,
-  TextInput,
-  Platform,
-  ActivityIndicator,
 } from 'react-native';
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Audio } from 'expo-av';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../src/constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZES,
+  BORDER_RADIUS,
+} from '../src/constants/theme';
 import {
   getProductByBarcode,
   createMovement,
-  createProduct,
   Product,
 } from '../src/database/db';
 
 export default function Scanner() {
-  const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [lastBarcode, setLastBarcode] = useState<string | null>(null);
+  const [barcode, setBarcode] = useState('');
   const [foundProduct, setFoundProduct] = useState<Product | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [quantity, setQuantity] = useState('1');
-  const [newProductName, setNewProductName] = useState('');
-  const [isNewProduct, setIsNewProduct] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-      }
-    };
-  }, []);
+  const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const router = useRouter();
 
   const playBeep = async () => {
     try {
       const { sound } = await Audio.Sound.createAsync(
-        { uri: 'https://www.soundjay.com/buttons/beep-01a.mp3' },
-        { shouldPlay: true }
+        require('../assets/beep.mp3')
       );
-      soundRef.current = sound;
       await sound.playAsync();
-    } catch (error) {
-      console.log('Error playing sound:', error);
-    }
-  };
-
-  const handleBarCodeScanned = async (result: BarcodeScanningResult) => {
-    if (scanned) return;
-    
-    const barcode = result.data;
-    setScanned(true);
-    setLastBarcode(barcode);
-    
-    await playBeep();
-    
-    try {
-      const product = await getProductByBarcode(barcode);
-      if (product) {
-        setFoundProduct(product);
-        setIsNewProduct(false);
-      } else {
-        setFoundProduct(null);
-        setIsNewProduct(true);
-        setNewProductName('');
-      }
-      setQuantity('1');
-      setShowModal(true);
-    } catch (error) {
-      console.error('Error looking up product:', error);
-      Alert.alert('Erro', 'Erro ao buscar produto');
-      setScanned(false);
-    }
-  };
-
-  const handleStockEntry = async () => {
-    const qty = parseInt(quantity) || 1;
-    
-    try {
-      if (isNewProduct && lastBarcode) {
-        if (!newProductName.trim()) {
-          Alert.alert('Atenção', 'Digite o nome do produto');
-          return;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if ('didJustFinish' in status && status.didJustFinish) {
+          sound.unloadAsync();
         }
-        const productId = await createProduct({
-          name: newProductName.trim(),
-          barcode: lastBarcode,
-          quantity: qty,
-          min_quantity: 5,
-          category: 'Geral',
-        });
-        Alert.alert('Sucesso', `Produto cadastrado com ${qty} unidades!`);
-      } else if (foundProduct) {
-        await createMovement(foundProduct.id, 'entrada', qty);
-        Alert.alert('Sucesso', `+${qty} unidades adicionadas!`);
-      }
-      closeModal();
+      });
     } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Erro', 'Erro ao processar entrada');
+      console.log('Erro ao tocar som:', error);
     }
   };
 
-  const handleStockExit = async () => {
-    if (!foundProduct) return;
-    
-    const qty = parseInt(quantity) || 1;
-    
-    if (qty > foundProduct.quantity) {
-      Alert.alert('Atenção', `Estoque atual: ${foundProduct.quantity} unidades`);
-      return;
-    }
-    
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    if (scanned) return;
+
+    setScanned(true);
+    setBarcode(data);
+    await playBeep();
+
     try {
-      await createMovement(foundProduct.id, 'saida', qty);
-      Alert.alert('Sucesso', `-${qty} unidades removidas!`);
-      closeModal();
+      const product = await getProductByBarcode(data);
+      setFoundProduct(product);
     } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Erro', 'Erro ao processar saída');
+      console.log('Erro ao buscar produto pelo código:', error);
+      setFoundProduct(null);
     }
   };
 
-  const closeModal = () => {
-    setShowModal(false);
-    setScanned(false);
+  const handleScanAgain = () => {
+    setBarcode('');
     setFoundProduct(null);
-    setLastBarcode(null);
-    setQuantity('1');
-    setNewProductName('');
-    setIsNewProduct(false);
+    setScanned(false);
+    setIsProcessingAction(false);
   };
 
-  const adjustQuantity = (delta: number) => {
-    const current = parseInt(quantity) || 0;
-    const newQty = Math.max(1, current + delta);
-    setQuantity(newQty.toString());
+  const handleRegisterNew = () => {
+    router.push({
+      pathname: '/product/add',
+      params: { barcode },
+    });
+  };
+
+  const handleViewProduct = () => {
+    if (!foundProduct) return;
+    router.push(`/product/${foundProduct.id}`);
+  };
+
+  const handleQuickMovement = async (type: 'entrada' | 'saida') => {
+    if (!foundProduct || isProcessingAction) return;
+
+    setIsProcessingAction(true);
+
+    try {
+      await createMovement(foundProduct.id, type, 1);
+
+      const delta = type === 'entrada' ? 1 : -1;
+      const newQuantity = Math.max(0, foundProduct.quantity + delta);
+
+      setFoundProduct({
+        ...foundProduct,
+        quantity: newQuantity,
+        updated_at: new Date().toISOString(),
+      });
+
+      Alert.alert(
+        'Sucesso',
+        type === 'entrada'
+          ? 'Entrada registrada com sucesso.'
+          : 'Saída registrada com sucesso.'
+      );
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível registrar a movimentação.');
+    } finally {
+      setIsProcessingAction(false);
+    }
   };
 
   if (!permission) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+    return <View style={styles.container} />;
   }
 
   if (!permission.granted) {
     return (
       <View style={styles.permissionContainer}>
-        <Ionicons name="camera-outline" size={80} color={COLORS.textSecondary} />
-        <Text style={styles.permissionTitle}>Permissão de Câmera</Text>
+        <Ionicons
+          name="camera-outline"
+          size={56}
+          color={COLORS.primary}
+          style={styles.permissionIcon}
+        />
+        <Text style={styles.permissionTitle}>Permissão da câmera</Text>
         <Text style={styles.permissionText}>
-          Precisamos acessar sua câmera para escanear códigos de barras
+          Precisamos da câmera para ler o código de barras dos produtos.
         </Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Permitir Acesso</Text>
+          <Text style={styles.permissionButtonText}>Permitir câmera</Text>
         </TouchableOpacity>
       </View>
     );
@@ -173,342 +138,349 @@ export default function Scanner() {
   return (
     <View style={styles.container}>
       <CameraView
-        style={styles.camera}
-        facing="back"
+        style={StyleSheet.absoluteFillObject}
         barcodeScannerSettings={{
           barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'],
         }}
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.scanArea}>
-            <View style={[styles.corner, styles.topLeft]} />
-            <View style={[styles.corner, styles.topRight]} />
-            <View style={[styles.corner, styles.bottomLeft]} />
-            <View style={[styles.corner, styles.bottomRight]} />
-          </View>
-          <Text style={styles.instructionText}>
-            Aponte a câmera para o código de barras
-          </Text>
+      />
+
+      <View style={styles.overlay}>
+        <Text style={styles.title}>Scanner Inteligente</Text>
+        <Text style={styles.subtitle}>
+          Aponte para o código de barras dentro da área marcada
+        </Text>
+
+        <View style={styles.scannerFrame}>
+          <View style={[styles.corner, styles.topLeft]} />
+          <View style={[styles.corner, styles.topRight]} />
+          <View style={[styles.corner, styles.bottomLeft]} />
+          <View style={[styles.corner, styles.bottomRight]} />
         </View>
-      </CameraView>
+      </View>
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-      >
-        <Ionicons name="close" size={28} color="#FFFFFF" />
-      </TouchableOpacity>
+      <View style={styles.bottomPanel}>
+        {!scanned ? (
+          <>
+            <Text style={styles.helperText}>
+              Escaneie um produto para registrar entrada, saída ou cadastrar um novo item.
+            </Text>
+          </>
+        ) : foundProduct ? (
+          <>
+            <View style={styles.statusHeader}>
+              <Ionicons name="checkmark-circle" size={22} color={COLORS.success} />
+              <Text style={styles.statusTitle}>Produto encontrado</Text>
+            </View>
 
-      <Modal
-        visible={showModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.modalClose} onPress={closeModal}>
-              <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-            </TouchableOpacity>
+            <Text style={styles.productName}>{foundProduct.name}</Text>
+            <Text style={styles.productMeta}>Código: {barcode}</Text>
+            <Text style={styles.productMeta}>Categoria: {foundProduct.category}</Text>
+            <Text style={styles.productStock}>
+              Estoque atual: <Text style={styles.productStockValue}>{foundProduct.quantity}</Text>
+            </Text>
 
-            {isNewProduct ? (
-              <>
-                <Ionicons name="cube-outline" size={48} color={COLORS.warning} />
-                <Text style={styles.modalTitle}>Novo Produto</Text>
-                <Text style={styles.modalBarcode}>Código: {lastBarcode}</Text>
-                <TextInput
-                  style={styles.nameInput}
-                  placeholder="Nome do produto"
-                  value={newProductName}
-                  onChangeText={setNewProductName}
-                  autoFocus
-                />
-              </>
-            ) : (
-              <>
-                <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
-                <Text style={styles.modalTitle}>{foundProduct?.name}</Text>
-                <Text style={styles.stockInfo}>
-                  Estoque atual: {foundProduct?.quantity} unidades
-                </Text>
-              </>
-            )}
-
-            <Text style={styles.quantityLabel}>Quantidade:</Text>
-            <View style={styles.quantityContainer}>
+            <View style={styles.quickActionsRow}>
               <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => adjustQuantity(-1)}
+                style={[styles.quickButton, styles.entryButton]}
+                onPress={() => handleQuickMovement('entrada')}
+                disabled={isProcessingAction}
               >
-                <Ionicons name="remove" size={24} color={COLORS.primary} />
+                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.quickButtonText}>Entrada +1</Text>
               </TouchableOpacity>
-              <TextInput
-                style={styles.quantityInput}
-                value={quantity}
-                onChangeText={setQuantity}
-                keyboardType="number-pad"
-                selectTextOnFocus
-              />
+
               <TouchableOpacity
-                style={styles.quantityButton}
-                onPress={() => adjustQuantity(1)}
+                style={[styles.quickButton, styles.exitButton]}
+                onPress={() => handleQuickMovement('saida')}
+                disabled={isProcessingAction}
               >
-                <Ionicons name="add" size={24} color={COLORS.primary} />
+                <Ionicons name="remove-circle-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.quickButtonText}>Saída -1</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.actionButtons}>
+            <View style={styles.secondaryActionsRow}>
               <TouchableOpacity
-                style={[styles.actionBtn, styles.entryBtn]}
-                onPress={handleStockEntry}
+                style={[styles.secondaryButton, styles.darkButton]}
+                onPress={handleScanAgain}
               >
-                <Ionicons name="arrow-down-circle" size={24} color="#FFFFFF" />
-                <Text style={styles.actionBtnText}>
-                  {isNewProduct ? 'Cadastrar' : 'Entrada'}
-                </Text>
+                <Text style={styles.secondaryButtonText}>Escanear novamente</Text>
               </TouchableOpacity>
 
-              {!isNewProduct && (
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.exitBtn]}
-                  onPress={handleStockExit}
-                >
-                  <Ionicons name="arrow-up-circle" size={24} color="#FFFFFF" />
-                  <Text style={styles.actionBtnText}>Saída</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.primaryButton]}
+                onPress={handleViewProduct}
+              >
+                <Text style={styles.secondaryButtonText}>Ver produto</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.statusHeader}>
+              <Ionicons name="alert-circle" size={22} color={COLORS.warning} />
+              <Text style={styles.statusTitle}>Produto não encontrado</Text>
             </View>
 
-            {!isNewProduct && foundProduct && (
+            <Text style={styles.readLabel}>Código lido</Text>
+            <Text style={styles.barcodeValue}>{barcode}</Text>
+            <Text style={styles.notFoundText}>
+              Esse código ainda não existe no seu banco local.
+            </Text>
+
+            <View style={styles.secondaryActionsColumn}>
               <TouchableOpacity
-                style={styles.detailsLink}
-                onPress={() => {
-                  closeModal();
-                  router.push(`/product/${foundProduct.id}`);
-                }}
+                style={[styles.largeActionButton, styles.primaryButton]}
+                onPress={handleRegisterNew}
               >
-                <Text style={styles.detailsLinkText}>Ver detalhes do produto</Text>
-                <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.secondaryButtonText}>Cadastrar novo produto</Text>
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Modal>
+
+              <TouchableOpacity
+                style={[styles.largeActionButton, styles.darkButton]}
+                onPress={handleScanAgain}
+              >
+                <Text style={styles.secondaryButtonText}>Escanear novamente</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 }
+
+const FRAME_WIDTH = 280;
+const FRAME_HEIGHT = 180;
+const CORNER_SIZE = 28;
+const CORNER_THICKNESS = 4;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
-  camera: {
-    flex: 1,
-  },
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  scanArea: {
-    width: 280,
-    height: 180,
-    position: 'relative',
-  },
-  corner: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderColor: COLORS.primary,
-  },
-  topLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-    borderTopLeftRadius: 12,
-  },
-  topRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    borderTopRightRadius: 12,
-  },
-  bottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-    borderBottomLeftRadius: 12,
-  },
-  bottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-    borderBottomRightRadius: 12,
-  },
-  instructionText: {
-    color: '#FFFFFF',
-    fontSize: FONT_SIZES.md,
-    marginTop: SPACING.xl,
-    textAlign: 'center',
-  },
-  backButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   permissionContainer: {
     flex: 1,
+    backgroundColor: COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.xl,
-    backgroundColor: COLORS.background,
+    padding: SPACING.lg,
+  },
+  permissionIcon: {
+    marginBottom: SPACING.md,
   },
   permissionTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '600',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
     color: COLORS.text,
-    marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
   },
   permissionText: {
     fontSize: FONT_SIZES.md,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    marginBottom: SPACING.xl,
+    marginBottom: SPACING.lg,
   },
   permissionButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
     borderRadius: BORDER_RADIUS.md,
   },
   permissionButtonText: {
-    color: '#FFFFFF',
+    color: '#fff',
+    fontWeight: '700',
     fontSize: FONT_SIZES.md,
-    fontWeight: '600',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: BORDER_RADIUS.xl,
-    borderTopRightRadius: BORDER_RADIUS.xl,
-    padding: SPACING.xl,
-    alignItems: 'center',
-  },
-  modalClose: {
+  overlay: {
     position: 'absolute',
-    top: SPACING.md,
-    right: SPACING.md,
-    padding: SPACING.sm,
+    top: 70,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
   },
-  modalTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: SPACING.md,
+  title: {
+    color: '#fff',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+    marginBottom: 6,
     textAlign: 'center',
   },
-  modalBarcode: {
+  subtitle: {
+    color: 'rgba(255,255,255,0.85)',
     fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
+    textAlign: 'center',
+    marginBottom: 28,
   },
-  stockInfo: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.textSecondary,
-    marginTop: SPACING.sm,
+  scannerFrame: {
+    width: FRAME_WIDTH,
+    height: FRAME_HEIGHT,
+    position: 'relative',
+    backgroundColor: 'transparent',
   },
-  nameInput: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
-    fontSize: FONT_SIZES.md,
-    marginTop: SPACING.md,
+  corner: {
+    position: 'absolute',
+    width: CORNER_SIZE,
+    height: CORNER_SIZE,
+    borderColor: '#22c55e',
   },
-  quantityLabel: {
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: CORNER_THICKNESS,
+    borderLeftWidth: CORNER_THICKNESS,
+    borderTopLeftRadius: 10,
+  },
+  topRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: CORNER_THICKNESS,
+    borderRightWidth: CORNER_THICKNESS,
+    borderTopRightRadius: 10,
+  },
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: CORNER_THICKNESS,
+    borderLeftWidth: CORNER_THICKNESS,
+    borderBottomLeftRadius: 10,
+  },
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: CORNER_THICKNESS,
+    borderRightWidth: CORNER_THICKNESS,
+    borderBottomRightRadius: 10,
+  },
+  bottomPanel: {
+    position: 'absolute',
+    left: SPACING.md,
+    right: SPACING.md,
+    bottom: 28,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+  },
+  helperText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: FONT_SIZES.sm,
+    lineHeight: 20,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  statusTitle: {
+    color: '#fff',
     fontSize: FONT_SIZES.md,
-    color: COLORS.text,
-    marginTop: SPACING.lg,
+    fontWeight: '700',
+  },
+  productName: {
+    color: '#fff',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  productMeta: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: FONT_SIZES.sm,
+    marginBottom: 4,
+  },
+  productStock: {
+    color: '#fff',
+    fontSize: FONT_SIZES.sm,
+    marginTop: 6,
+    marginBottom: SPACING.md,
+  },
+  productStockValue: {
+    fontWeight: '700',
+    color: '#22c55e',
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
     marginBottom: SPACING.sm,
   },
-  quantityContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  quantityButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  quantityInput: {
-    width: 80,
-    height: 48,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: BORDER_RADIUS.md,
-    textAlign: 'center',
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '600',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    marginTop: SPACING.lg,
-    width: '100%',
-  },
-  actionBtn: {
+  quickButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: SPACING.md,
+    paddingVertical: SPACING.md,
     borderRadius: BORDER_RADIUS.md,
-    gap: SPACING.sm,
+    gap: 6,
   },
-  entryBtn: {
+  entryButton: {
     backgroundColor: COLORS.success,
   },
-  exitBtn: {
+  exitButton: {
     backgroundColor: COLORS.danger,
   },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
+  quickButtonText: {
+    color: '#fff',
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
   },
-  detailsLink: {
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  secondaryActionsColumn: {
+    gap: SPACING.sm,
+  },
+  secondaryButton: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  largeActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: SPACING.lg,
-    padding: SPACING.sm,
+    justifyContent: 'center',
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    gap: 6,
   },
-  detailsLinkText: {
-    color: COLORS.primary,
+  primaryButton: {
+    backgroundColor: COLORS.primary,
+  },
+  darkButton: {
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  secondaryButtonText: {
+    color: '#fff',
     fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+  },
+  readLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: FONT_SIZES.sm,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  barcodeValue: {
+    color: '#fff',
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  notFoundText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: FONT_SIZES.sm,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.md,
   },
 });

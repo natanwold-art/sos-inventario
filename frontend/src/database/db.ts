@@ -8,6 +8,7 @@ export interface Product {
   quantity: number;
   min_quantity: number;
   category: string;
+  cost_price: number;
   created_at: string;
   updated_at: string;
 }
@@ -53,8 +54,16 @@ const loadFromStorage = async (): Promise<DbState> => {
 
     const parsed = JSON.parse(data);
 
+    const products: Product[] = Array.isArray(parsed?.products)
+      ? parsed.products.map((product: any) => ({
+          ...product,
+          cost_price:
+            typeof product?.cost_price === 'number' ? product.cost_price : 0,
+        }))
+      : [];
+
     return {
-      products: Array.isArray(parsed?.products) ? parsed.products : [],
+      products,
       movements: Array.isArray(parsed?.movements) ? parsed.movements : [],
       nextProductId:
         typeof parsed?.nextProductId === 'number' ? parsed.nextProductId : 1,
@@ -83,7 +92,6 @@ const saveToStorage = async (): Promise<void> => {
 export const initDatabase = async (): Promise<void> => {
   if (initialized) return;
 
-  // testa se o módulo nativo está acessível
   try {
     await AsyncStorage.getItem('__storage_test__');
     storageAvailable = true;
@@ -117,6 +125,7 @@ export const createProduct = async (
 
   const newProduct: Product = {
     ...product,
+    cost_price: typeof product.cost_price === 'number' ? product.cost_price : 0,
     id: dbState.nextProductId++,
     created_at: now,
     updated_at: now,
@@ -147,6 +156,10 @@ export const updateProduct = async (
   dbState.products[index] = {
     ...dbState.products[index],
     ...product,
+    cost_price:
+      typeof product.cost_price === 'number'
+        ? product.cost_price
+        : dbState.products[index].cost_price ?? 0,
     updated_at: new Date().toISOString(),
   };
 
@@ -185,6 +198,22 @@ export const getProductCount = async (): Promise<number> => {
 
 export const getLowStockCount = async (): Promise<number> => {
   return dbState.products.filter((p) => p.quantity <= p.min_quantity).length;
+};
+
+export const getTotalInventoryValue = async (): Promise<number> => {
+  return dbState.products.reduce(
+    (total, product) => total + product.quantity * (product.cost_price || 0),
+    0
+  );
+};
+
+export const getLowStockInventoryValue = async (): Promise<number> => {
+  return dbState.products
+    .filter((p) => p.quantity <= p.min_quantity)
+    .reduce(
+      (total, product) => total + product.quantity * (product.cost_price || 0),
+      0
+    );
 };
 
 // Movement operations
