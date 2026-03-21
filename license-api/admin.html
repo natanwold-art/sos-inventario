@@ -31,7 +31,7 @@
       gap: 12px;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
-    input, button, select {
+    input, button {
       width: 100%;
       box-sizing: border-box;
       border-radius: 10px;
@@ -196,12 +196,15 @@
     function getLicenseBadge(license) {
       const now = Date.now();
       const exp = new Date(license.expires_at).getTime();
+
       if (license.status === 'blocked') {
         return '<span class="pill blocked">Bloqueada</span>';
       }
+
       if (exp <= now) {
         return '<span class="pill expired">Expirada</span>';
       }
+
       return '<span class="pill active">Ativa</span>';
     }
 
@@ -259,6 +262,13 @@
         });
 
         setStatus('createStatus', data.message || 'Licença criada com sucesso.', true);
+
+        document.getElementById('companyName').value = '';
+        document.getElementById('ownerName').value = '';
+        document.getElementById('whatsapp').value = '';
+        document.getElementById('activationCode').value = '';
+        document.getElementById('planDays').value = '30';
+
         loadLicenses();
       } catch (error) {
         setStatus('createStatus', error.message, false);
@@ -308,6 +318,20 @@
       }
     }
 
+    async function deleteLicense(code) {
+      const confirmDelete = confirm(`Deseja excluir definitivamente a licença ${code}?`);
+      if (!confirmDelete) return;
+
+      try {
+        await request('/admin/license/delete', 'POST', {
+          activationCode: code
+        });
+        loadLicenses();
+      } catch (error) {
+        alert(error.message);
+      }
+    }
+
     function renderTable(licenses) {
       const wrap = document.getElementById('tableWrap');
 
@@ -344,6 +368,7 @@
                     <button class="btn-primary small" onclick="renewLicense('${license.activation_code}')">Renovar</button>
                     <button class="btn-warning small" onclick="unbindLicense('${license.activation_code}')">Desvincular</button>
                     <button class="btn-danger small" onclick="blockLicense('${license.activation_code}')">Bloquear</button>
+                    <button class="btn-danger small" onclick="deleteLicense('${license.activation_code}')">Excluir</button>
                   </div>
                 </td>
               </tr>

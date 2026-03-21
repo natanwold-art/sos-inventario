@@ -545,5 +545,44 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+app.post('/admin/license/delete', requireAdmin, async (req, res) => {
+  try {
+    const { activationCode } = req.body;
 
+    if (!activationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'activationCode é obrigatório.',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      DELETE FROM licenses
+      WHERE activation_code = $1
+      RETURNING *
+      `,
+      [normalizeCode(activationCode)]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Licença não encontrada.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Licença excluída com sucesso.',
+      license: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Delete license error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao excluir licença.',
+    });
+  }
+});
 startServer();
