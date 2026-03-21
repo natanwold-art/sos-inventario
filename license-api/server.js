@@ -270,5 +270,79 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+app.post('/license/create', async (req, res) => {
+  try {
+    const {
+      companyName,
+      ownerName,
+      whatsapp,
+      activationCode,
+      planDays,
+    } = req.body;
 
+    if (!companyName || !activationCode || !planDays) {
+      return res.status(400).json({
+        success: false,
+        message: 'companyName, activationCode e planDays são obrigatórios.',
+      });
+    }
+
+    const normalizedCode = activationCode.trim().toUpperCase();
+    const days = Number(planDays);
+
+    if (!days || days <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'planDays deve ser maior que zero.',
+      });
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + days);
+
+    const result = await pool.query(
+      `
+      INSERT INTO licenses (
+        company_name,
+        owner_name,
+        whatsapp,
+        activation_code,
+        plan_days,
+        status,
+        expires_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'active', $6)
+      RETURNING *
+      `,
+      [
+        companyName.trim(),
+        ownerName?.trim() || null,
+        whatsapp?.trim() || null,
+        normalizedCode,
+        days,
+        expiresAt.toISOString(),
+      ]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Licença criada com sucesso.',
+      license: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Create license error:', error);
+
+    if (error.code === '23505') {
+      return res.status(409).json({
+        success: false,
+        message: 'Esse código já existe.',
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao criar licença.',
+    });
+  }
+});
 startServer();
