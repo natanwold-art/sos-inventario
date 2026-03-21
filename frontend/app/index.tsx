@@ -118,7 +118,7 @@ export default function Dashboard() {
 
       <TouchableOpacity
         style={styles.heroButton}
-        onPress={() => router.push('/scanner')}
+        onPress={() => router.push('/scanner' as any)}
         activeOpacity={0.85}
       >
         <View style={styles.heroIconWrap}>
@@ -159,7 +159,7 @@ export default function Dashboard() {
         {lowStockCount > 0 && (
           <TouchableOpacity
             style={styles.restockButton}
-            onPress={() => router.push('/alerts')}
+            onPress={() => router.push('/alerts' as any)}
             activeOpacity={0.85}
           >
             <Text style={styles.restockText}>🛒 Ver produtos para reposição</Text>
@@ -170,7 +170,7 @@ export default function Dashboard() {
       {lowStockCount > 0 && (
         <TouchableOpacity
           style={styles.warningBanner}
-          onPress={() => router.push('/alerts')}
+          onPress={() => router.push('/alerts' as any)}
           activeOpacity={0.85}
         >
           <Ionicons name="warning" size={22} color="#FFFFFF" />
@@ -230,7 +230,7 @@ export default function Dashboard() {
       <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
-          onPress={() => router.push('/products')}
+          onPress={() => router.push('/products' as any)}
         >
           <Ionicons name="cube-outline" size={32} color={COLORS.primary} />
           <Text style={styles.statNumber}>{productCount}</Text>
@@ -239,7 +239,7 @@ export default function Dashboard() {
 
         <TouchableOpacity
           style={[styles.statCard, lowStockCount > 0 && styles.statCardWarning]}
-          onPress={() => router.push('/alerts')}
+          onPress={() => router.push('/alerts' as any)}
         >
           <Ionicons
             name="alert-circle-outline"
@@ -257,7 +257,7 @@ export default function Dashboard() {
       <View style={styles.actionsContainer}>
         <TouchableOpacity
           style={[styles.actionButton, styles.actionPrimary]}
-          onPress={() => router.push('/scanner')}
+          onPress={() => router.push('/scanner' as any)}
         >
           <Ionicons name="barcode-outline" size={40} color="#FFFFFF" />
           <Text style={styles.actionTextWhite}>Escanear{'\n'}Produto</Text>
@@ -265,7 +265,7 @@ export default function Dashboard() {
 
         <TouchableOpacity
           style={[styles.actionButton, styles.actionSecondary]}
-          onPress={() => router.push('/product/add')}
+          onPress={() => router.push('/product/add' as any)}
         >
           <Ionicons name="add-circle-outline" size={40} color={COLORS.primary} />
           <Text style={styles.actionText}>Cadastrar{'\n'}Manual</Text>
@@ -273,7 +273,7 @@ export default function Dashboard() {
 
         <TouchableOpacity
           style={[styles.actionButton, styles.actionSecondary]}
-          onPress={() => router.push('/products')}
+          onPress={() => router.push('/products' as any)}
         >
           <Ionicons name="list-outline" size={40} color={COLORS.primary} />
           <Text style={styles.actionText}>Lista de{'\n'}Produtos</Text>
