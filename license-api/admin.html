@@ -12,7 +12,7 @@
       color: #111827;
     }
     .container {
-      max-width: 1100px;
+      max-width: 1150px;
       margin: 0 auto;
       padding: 24px;
     }
@@ -31,7 +31,7 @@
       gap: 12px;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
-    input, button {
+    input, button, select {
       width: 100%;
       box-sizing: border-box;
       border-radius: 10px;
@@ -39,7 +39,7 @@
       padding: 12px;
       font-size: 15px;
     }
-    input {
+    input, select {
       background: #fff;
     }
     button {
@@ -129,6 +129,12 @@
       background: #fef3c7;
       color: #92400e;
     }
+    .top-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
   </style>
 </head>
 <body>
@@ -141,7 +147,7 @@
         <input id="apiUrl" value="https://sos-inventario-license-api.onrender.com" placeholder="URL da API" />
         <input id="adminSecret" placeholder="ADMIN_SECRET" />
       </div>
-      <div style="margin-top:12px;">
+      <div class="top-actions">
         <button class="btn-primary" onclick="loadLicenses()">Entrar e listar licenças</button>
       </div>
       <div id="authStatus" class="status"></div>
@@ -156,15 +162,31 @@
         <input id="activationCode" placeholder="Código ex: JOAO30APP" />
         <input id="planDays" type="number" placeholder="Dias do plano" value="30" />
       </div>
-      <div style="margin-top:12px;">
+
+      <div class="top-actions">
+        <button class="btn-secondary" onclick="generateCode()">Gerar código automático</button>
         <button class="btn-success" onclick="createLicense()">Criar licença</button>
       </div>
+
       <div id="createStatus" class="status"></div>
     </div>
 
     <div class="card">
+      <h2>Buscar e Filtrar</h2>
+      <div class="grid">
+        <input id="searchTerm" placeholder="Buscar por empresa, responsável ou código" oninput="renderFilteredLicenses()" />
+        <select id="statusFilter" onchange="renderFilteredLicenses()">
+          <option value="all">Todos os status</option>
+          <option value="active">Ativas</option>
+          <option value="blocked">Bloqueadas</option>
+          <option value="expired">Expiradas</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Licenças</h2>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <div class="top-actions">
         <button class="btn-secondary" onclick="loadLicenses()">Atualizar lista</button>
       </div>
       <div id="tableWrap"></div>
@@ -172,6 +194,8 @@
   </div>
 
   <script>
+    let allLicenses = [];
+
     function getApiUrl() {
       return document.getElementById('apiUrl').value.trim();
     }
@@ -193,19 +217,48 @@
       return d.toLocaleString('pt-BR');
     }
 
-    function getLicenseBadge(license) {
+    function getLicenseState(license) {
       const now = Date.now();
       const exp = new Date(license.expires_at).getTime();
 
-      if (license.status === 'blocked') {
+      if (license.status === 'blocked') return 'blocked';
+      if (exp <= now) return 'expired';
+      return 'active';
+    }
+
+    function getLicenseBadge(license) {
+      const state = getLicenseState(license);
+
+      if (state === 'blocked') {
         return '<span class="pill blocked">Bloqueada</span>';
       }
 
-      if (exp <= now) {
+      if (state === 'expired') {
         return '<span class="pill expired">Expirada</span>';
       }
 
       return '<span class="pill active">Ativa</span>';
+    }
+
+    function sanitizeCodePart(value) {
+      return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase();
+    }
+
+    function generateCode() {
+      const companyName = document.getElementById('companyName').value.trim();
+      const ownerName = document.getElementById('ownerName').value.trim();
+      const planDays = Number(document.getElementById('planDays').value || 30);
+
+      const baseCompany = sanitizeCodePart(companyName).slice(0, 6);
+      const baseOwner = sanitizeCodePart(ownerName).slice(0, 4);
+      const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
+
+      const code = `${baseCompany || 'CLIENT'}${baseOwner || 'USER'}${planDays}${randomPart}`;
+      document.getElementById('activationCode').value = code;
     }
 
     async function request(path, method = 'GET', body) {
@@ -238,8 +291,9 @@
       try {
         setStatus('authStatus', 'Carregando licenças...', true);
         const data = await request('/admin/licenses', 'GET');
+        allLicenses = data.licenses || [];
         setStatus('authStatus', 'Licenças carregadas com sucesso.', true);
-        renderTable(data.licenses || []);
+        renderFilteredLicenses();
       } catch (error) {
         setStatus('authStatus', error.message, false);
       }
@@ -330,6 +384,28 @@
       } catch (error) {
         alert(error.message);
       }
+    }
+
+    function renderFilteredLicenses() {
+      const term = document.getElementById('searchTerm').value.trim().toLowerCase();
+      const status = document.getElementById('statusFilter').value;
+
+      const filtered = allLicenses.filter((license) => {
+        const state = getLicenseState(license);
+
+        const textMatch =
+          !term ||
+          String(license.company_name || '').toLowerCase().includes(term) ||
+          String(license.owner_name || '').toLowerCase().includes(term) ||
+          String(license.activation_code || '').toLowerCase().includes(term);
+
+        const statusMatch =
+          status === 'all' || state === status;
+
+        return textMatch && statusMatch;
+      });
+
+      renderTable(filtered);
     }
 
     function renderTable(licenses) {
