@@ -16,6 +16,27 @@ const pool = new Pool({
     : false,
 });
 
+const createTables = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS licenses (
+      id SERIAL PRIMARY KEY,
+      company_name VARCHAR(150) NOT NULL,
+      owner_name VARCHAR(150),
+      whatsapp VARCHAR(30),
+      activation_code VARCHAR(80) UNIQUE NOT NULL,
+      plan_days INTEGER NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      device_id VARCHAR(120),
+      expires_at TIMESTAMP NOT NULL,
+      last_check_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  console.log('Licenses table ready');
+};
+
 app.get('/', (req, res) => {
   res.json({
     ok: true,
@@ -237,6 +258,17 @@ app.post('/license/check', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`License API running on port ${PORT}`);
-});
+const startServer = async () => {
+  try {
+    await createTables();
+
+    app.listen(PORT, () => {
+      console.log(`License API running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Startup error:', error);
+    process.exit(1);
+  }
+};
+
+startServer();
