@@ -318,6 +318,26 @@ export const getLicenseStatus = async () => {
   };
 };
 
+export const getDaysUntilExpiration = async (): Promise<number | null> => {
+  const license = await getLicense();
+
+  if (!license.premiumExpiresAt) return null;
+
+  const now = new Date();
+  const expiresAt = new Date(license.premiumExpiresAt);
+  const diff = expiresAt.getTime() - now.getTime();
+
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+};
+
+export const isLicenseExpiringSoon = async (): Promise<boolean> => {
+  const days = await getDaysUntilExpiration();
+
+  if (days === null) return false;
+
+  return days <= 7;
+};
+
 export const deactivatePremium = async (): Promise<void> => {
   const current = await getLicense();
 

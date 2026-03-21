@@ -20,6 +20,10 @@ import {
   getLowStockInventoryValue,
   Movement,
 } from '../src/database/db';
+import {
+  getLicenseStatus,
+  getDaysUntilExpiration,
+} from '../src/services/license';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -28,6 +32,9 @@ export default function Dashboard() {
   const [recentMovements, setRecentMovements] = useState<Movement[]>([]);
   const [totalInventoryValue, setTotalInventoryValue] = useState(0);
   const [lowStockInventoryValue, setLowStockInventoryValue] = useState(0);
+  const [licenseActive, setLicenseActive] = useState(false);
+  const [licenseExpiresAt, setLicenseExpiresAt] = useState<string | null>(null);
+  const [licenseDaysRemaining, setLicenseDaysRemaining] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
@@ -40,11 +47,17 @@ export default function Dashboard() {
         getLowStockInventoryValue(),
       ]);
 
+      const licenseStatus = await getLicenseStatus();
+      const licenseDays = await getDaysUntilExpiration();
+
       setProductCount(products);
       setLowStockCount(lowStock);
       setRecentMovements(movements);
       setTotalInventoryValue(totalValue);
       setLowStockInventoryValue(riskValue);
+      setLicenseActive(!!licenseStatus.premiumActive);
+      setLicenseExpiresAt(licenseStatus.premiumExpiresAt ?? null);
+      setLicenseDaysRemaining(licenseDays);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -97,6 +110,16 @@ export default function Dashboard() {
     });
   };
 
+  const formatLicenseDate = (dateString: string | null) => {
+    if (!dateString) return '—';
+
+    const date = new Date(dateString);
+
+    if (Number.isNaN(date.getTime())) return '—';
+
+    return date.toLocaleDateString('pt-BR');
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -113,6 +136,32 @@ export default function Dashboard() {
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={COLORS.text} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.planBanner}>
+        <View style={styles.planBannerLeft}>
+          <Ionicons
+            name={licenseActive ? 'shield-checkmark' : 'alert-circle'}
+            size={22}
+            color={licenseActive ? COLORS.success : COLORS.danger}
+          />
+          <View style={styles.planBannerTextWrap}>
+            <Text style={styles.planBannerTitle}>
+              {licenseActive ? 'Plano ativo' : 'Plano inativo'}
+            </Text>
+            <Text style={styles.planBannerSubtitle}>
+              Vencimento: {formatLicenseDate(licenseExpiresAt)}
+              {licenseDaysRemaining !== null ? ` • ${licenseDaysRemaining} dias restantes` : ''}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.planBannerButton}
+          onPress={() => router.push('/my-plan' as any)}
+        >
+          <Text style={styles.planBannerButtonText}>Meu Plano</Text>
         </TouchableOpacity>
       </View>
 
@@ -226,15 +275,8 @@ export default function Dashboard() {
           </Text>
         </View>
       </View>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.actionSecondary]}
-          onPress={() => router.push('/my-plan' as any)}
->
-         <Ionicons name="card-outline" size={40} color={COLORS.primary} />
-         <Text style={styles.actionText}>Meu{'\n'}Plano</Text>
-        </TouchableOpacity>
-        
-    <View style={styles.statsContainer}>
+
+      <View style={styles.statsContainer}>
         <TouchableOpacity
           style={styles.statCard}
           onPress={() => router.push('/products' as any)}
@@ -263,27 +305,39 @@ export default function Dashboard() {
       <Text style={styles.sectionTitle}>Ações Rápidas</Text>
       <View style={styles.actionsContainer}>
         <TouchableOpacity
-          style={[styles.actionButton, styles.actionPrimary]}
+          style={[styles.actionButtonLarge, styles.actionPrimary]}
           onPress={() => router.push('/scanner' as any)}
         >
-          <Ionicons name="barcode-outline" size={40} color="#FFFFFF" />
-          <Text style={styles.actionTextWhite}>Escanear{'\n'}Produto</Text>
+          <Ionicons name="barcode-outline" size={38} color="#FFFFFF" />
+          <Text style={styles.actionTextWhiteLarge}>Escanear Produto</Text>
+          <Text style={styles.actionSubtextWhite}>Entrada e saída rápida</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.actionSecondary]}
+          style={[styles.actionButtonLarge, styles.actionSecondary]}
           onPress={() => router.push('/product/add' as any)}
         >
-          <Ionicons name="add-circle-outline" size={40} color={COLORS.primary} />
-          <Text style={styles.actionText}>Cadastrar{'\n'}Manual</Text>
+          <Ionicons name="add-circle-outline" size={38} color={COLORS.primary} />
+          <Text style={styles.actionTextLarge}>Cadastrar Manual</Text>
+          <Text style={styles.actionSubtext}>Novo item no estoque</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.actionSecondary]}
+          style={[styles.actionButtonLarge, styles.actionSecondary]}
           onPress={() => router.push('/products' as any)}
         >
-          <Ionicons name="list-outline" size={40} color={COLORS.primary} />
-          <Text style={styles.actionText}>Lista de{'\n'}Produtos</Text>
+          <Ionicons name="list-outline" size={38} color={COLORS.primary} />
+          <Text style={styles.actionTextLarge}>Lista de Produtos</Text>
+          <Text style={styles.actionSubtext}>Consultar estoque</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButtonLarge, styles.actionSecondary]}
+          onPress={() => router.push('/my-plan' as any)}
+        >
+          <Ionicons name="card-outline" size={38} color={COLORS.primary} />
+          <Text style={styles.actionTextLarge}>Meu Plano</Text>
+          <Text style={styles.actionSubtext}>Licença e renovação</Text>
         </TouchableOpacity>
       </View>
 
@@ -362,6 +416,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  planBanner: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  planBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  planBannerTextWrap: {
+    marginLeft: SPACING.sm,
+    flex: 1,
+  },
+  planBannerTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  planBannerSubtitle: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  planBannerButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.md,
+    marginLeft: SPACING.sm,
+  },
+  planBannerButtonText: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
   },
   heroButton: {
     backgroundColor: COLORS.primary,
@@ -443,7 +542,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   restockText: {
-    color: '#fff',
+    color: '#FFFFFF',
     textAlign: 'center',
     fontWeight: '700',
   },
@@ -576,8 +675,10 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SPACING.md,
   },
+
   actionsContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: SPACING.md,
     marginBottom: SPACING.lg,
   },
@@ -591,6 +692,20 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionButtonLarge: {
+    width: '47%',
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 145,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -616,6 +731,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: SPACING.sm,
   },
+  actionTextWhiteLarge: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginTop: SPACING.sm,
+  },
+  actionSubtextWhite: {
+    fontSize: FONT_SIZES.xs,
+    color: 'rgba(255,255,255,0.88)',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  actionTextLarge: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+    textAlign: 'center',
+    marginTop: SPACING.sm,
+  },
+  actionSubtext: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+
   recentSection: {
     marginTop: SPACING.sm,
   },

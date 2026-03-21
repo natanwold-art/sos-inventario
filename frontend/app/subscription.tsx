@@ -11,6 +11,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import {
   activateLicenseOnline,
   getLicenseStatus,
@@ -102,18 +103,41 @@ export default function SubscriptionScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Ative o SOS Inventário</Text>
-
-      <Text style={styles.subtitle}>
-        Seu período grátis terminou. Para continuar usando o app, escolha um
-        plano, faça o pagamento via Pix e receba seu código de liberação.
-      </Text>
+      <View style={styles.heroCard}>
+        <Ionicons name="shield-checkmark-outline" size={42} color="#2563EB" />
+        <Text style={styles.title}>Ative o SOS Inventário</Text>
+        <Text style={styles.subtitle}>
+          Seu período grátis terminou. Continue usando o app com total acesso ao
+          estoque, dashboard e relatórios.
+        </Text>
+      </View>
 
       <View style={styles.alertBox}>
         <Text style={styles.alertTitle}>Teste grátis</Text>
         <Text style={styles.alertText}>
           Dias restantes: <Text style={styles.bold}>{trialRemainingDays}</Text>
         </Text>
+      </View>
+
+      <Text style={styles.sectionTitle}>O que continua liberado no plano</Text>
+
+      <View style={styles.featureCard}>
+        <View style={styles.featureRow}>
+          <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+          <Text style={styles.featureText}>Scanner inteligente offline</Text>
+        </View>
+        <View style={styles.featureRow}>
+          <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+          <Text style={styles.featureText}>Controle de entradas e saídas</Text>
+        </View>
+        <View style={styles.featureRow}>
+          <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+          <Text style={styles.featureText}>Valor total em estoque</Text>
+        </View>
+        <View style={styles.featureRow}>
+          <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+          <Text style={styles.featureText}>Valor em risco e alertas</Text>
+        </View>
       </View>
 
       <Text style={styles.sectionTitle}>Planos</Text>
@@ -194,23 +218,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F8FA',
     padding: 24,
   },
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 22,
+    marginBottom: 18,
+    alignItems: 'center',
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#111827',
+    marginTop: 10,
     marginBottom: 10,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
     color: '#4B5563',
     lineHeight: 22,
-    marginBottom: 20,
+    textAlign: 'center',
   },
   alertBox: {
     backgroundColor: '#FFF4E5',
     borderRadius: 14,
     padding: 16,
-    marginBottom: 22,
+    marginBottom: 18,
   },
   alertTitle: {
     fontSize: 16,
@@ -231,6 +264,23 @@ const styles = StyleSheet.create({
     color: '#111827',
     marginBottom: 12,
     marginTop: 6,
+  },
+  featureCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  featureText: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
   },
   planCard: {
     backgroundColor: '#FFFFFF',

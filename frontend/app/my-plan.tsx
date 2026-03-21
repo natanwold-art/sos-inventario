@@ -10,7 +10,10 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
-import { getLicenseStatus } from '../src/services/license';
+import {
+  getLicenseStatus,
+  getDaysUntilExpiration,
+} from '../src/services/license';
 
 export default function MyPlanScreen() {
   const [loading, setLoading] = useState(true);
@@ -21,6 +24,7 @@ export default function MyPlanScreen() {
     premiumExpiresAt: string | null;
     lastValidatedAt: string | null;
     premiumActive: boolean;
+    daysRemaining: number | null;
   }>({
     companyName: null,
     ownerName: null,
@@ -28,6 +32,7 @@ export default function MyPlanScreen() {
     premiumExpiresAt: null,
     lastValidatedAt: null,
     premiumActive: false,
+    daysRemaining: null,
   });
 
   const PIX_KEY = '71988720448';
@@ -41,6 +46,7 @@ export default function MyPlanScreen() {
     try {
       setLoading(true);
       const status = await getLicenseStatus();
+      const daysRemaining = await getDaysUntilExpiration();
 
       setLicense({
         companyName: status.companyName ?? null,
@@ -49,6 +55,7 @@ export default function MyPlanScreen() {
         premiumExpiresAt: status.premiumExpiresAt ?? null,
         lastValidatedAt: status.lastValidatedAt ?? null,
         premiumActive: !!status.premiumActive,
+        daysRemaining,
       });
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível carregar os dados do plano.');
@@ -119,6 +126,9 @@ export default function MyPlanScreen() {
     }
   };
 
+  const isExpiringSoon =
+    typeof license.daysRemaining === 'number' && license.daysRemaining <= 7;
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Meu Plano</Text>
@@ -144,6 +154,15 @@ export default function MyPlanScreen() {
         </View>
       </View>
 
+      {isExpiringSoon && (
+        <View style={styles.warningCard}>
+          <Text style={styles.warningTitle}>Seu plano está perto de vencer</Text>
+          <Text style={styles.warningText}>
+            Faltam {license.daysRemaining} dias para o vencimento.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.infoCard}>
         <Text style={styles.label}>Empresa</Text>
         <Text style={styles.value}>{license.companyName || '—'}</Text>
@@ -156,6 +175,11 @@ export default function MyPlanScreen() {
 
         <Text style={styles.label}>Vencimento</Text>
         <Text style={styles.value}>{formatDate(license.premiumExpiresAt)}</Text>
+
+        <Text style={styles.label}>Dias restantes</Text>
+        <Text style={styles.value}>
+          {license.daysRemaining !== null ? `${license.daysRemaining} dias` : '—'}
+        </Text>
 
         <Text style={styles.label}>Última validação</Text>
         <Text style={styles.value}>{formatDate(license.lastValidatedAt)}</Text>
@@ -223,6 +247,22 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 17,
     fontWeight: '700',
+  },
+  warningCard: {
+    backgroundColor: '#FFF4E5',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#9A3412',
+    marginBottom: 6,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#7C2D12',
   },
   infoCard: {
     backgroundColor: '#FFFFFF',
