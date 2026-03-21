@@ -8,11 +8,11 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import * as Clipboard from '../src/services/license';
+import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import {
-  activateLicense,
+  activateLicenseOnline,
   getLicenseStatus,
   getTrialInfo,
 } from '../src/services/license';
@@ -32,13 +32,17 @@ export default function SubscriptionScreen() {
   }, []);
 
   const loadData = async () => {
-    const trial = await getTrialInfo();
-    const status = await getLicenseStatus();
+    try {
+      const trial = await getTrialInfo();
+      const status = await getLicenseStatus();
 
-    setTrialRemainingDays(trial.remainingDays);
+      setTrialRemainingDays(trial.remainingDays);
 
-    if (status.hasAccess) {
-      router.replace('/dashboard' as any);
+      if (status.hasAccess) {
+        router.replace('/dashboard' as any);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar status da licença:', error);
     }
   };
 
@@ -51,7 +55,7 @@ export default function SubscriptionScreen() {
     try {
       setLoading(true);
 
-      const result = await activateLicense(activationCode);
+      const result = await activateLicenseOnline(activationCode);
 
       if (!result.success) {
         Alert.alert('Erro', result.message);
@@ -68,24 +72,32 @@ export default function SubscriptionScreen() {
   };
 
   const handleCopyPix = async () => {
-    await Clipboard.setStringAsync(PIX_KEY);
-    Alert.alert('Copiado', 'Chave Pix copiada com sucesso.');
+    try {
+      await Clipboard.setStringAsync(PIX_KEY);
+      Alert.alert('Copiado', 'Chave Pix copiada com sucesso.');
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível copiar a chave Pix.');
+    }
   };
 
   const handleOpenWhatsApp = async () => {
-    const message = encodeURIComponent(
-      'Olá! Fiz o pagamento do SOS Inventário e quero meu código de liberação.'
-    );
+    try {
+      const message = encodeURIComponent(
+        'Olá! Fiz o pagamento do SOS Inventário e quero meu código de liberação.'
+      );
 
-    const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
-    const supported = await Linking.canOpenURL(url);
+      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
+      const supported = await Linking.canOpenURL(url);
 
-    if (!supported) {
+      if (!supported) {
+        Alert.alert('Erro', 'Não foi possível abrir o WhatsApp.');
+        return;
+      }
+
+      await Linking.openURL(url);
+    } catch (error) {
       Alert.alert('Erro', 'Não foi possível abrir o WhatsApp.');
-      return;
     }
-
-    await Linking.openURL(url);
   };
 
   return (
@@ -155,6 +167,7 @@ export default function SubscriptionScreen() {
         value={activationCode}
         onChangeText={setActivationCode}
         autoCapitalize="characters"
+        editable={!loading}
       />
 
       <TouchableOpacity

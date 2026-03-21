@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LICENSE_KEY = '@sos_inventario_license';
 const DEFAULT_TRIAL_DAYS = 7;
+const LICENSE_API_URL = 'https://sos-inventario-license-api.onrender.com';
+const OFFLINE_GRACE_DAYS = 7;
 
 export type LicenseData = {
   firstLaunchDate: string;
@@ -9,6 +11,10 @@ export type LicenseData = {
   isPremium: boolean;
   premiumExpiresAt: string | null;
   activationCode: string | null;
+  companyName: string | null;
+  ownerName: string | null;
+  deviceId: string | null;
+  lastValidatedAt: string | null;
 };
 
 let storageAvailable = true;
@@ -25,16 +31,26 @@ const diffInDays = (start: Date, end: Date) => {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
+const generateDeviceId = () => {
+  return `DEVICE-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`.toUpperCase();
+};
+
 export const getDefaultLicense = (): LicenseData => ({
   firstLaunchDate: new Date().toISOString(),
   trialDays: DEFAULT_TRIAL_DAYS,
   isPremium: false,
   premiumExpiresAt: null,
   activationCode: null,
+  companyName: null,
+  ownerName: null,
+  deviceId: null,
+  lastValidatedAt: null,
 });
 
 const safeGetItem = async (key: string): Promise<string | null> => {
-  if (!storageAvailable) return memoryLicense ? JSON.stringify(memoryLicense) : null;
+  if (!storageAvailable) {
+    return memoryLicense ? JSON.stringify(memoryLicense) : null;
+  }
 
   try {
     return await AsyncStorage.getItem(key);
@@ -60,16 +76,16 @@ const safeSetItem = async (key: string, value: string): Promise<void> => {
   }
 };
 
-const safeRemoveItem = async (key: string): Promise<void> => {
+const safeRemoveItem = async (): Promise<void> => {
   if (!storageAvailable) {
     memoryLicense = null;
     return;
   }
 
   try {
-    await AsyncStorage.removeItem(key);
+    await AsyncStorage.removeItem(LICENSE_KEY);
   } catch (error) {
-    console.warn('Erro ao remover licença do AsyncStorage:', error);
+    console.warn('Erro ao remover licença:', error);
     storageAvailable = false;
     memoryLicense = null;
   }
@@ -79,12 +95,19 @@ export const initLicense = async (): Promise<LicenseData> => {
   const existing = await safeGetItem(LICENSE_KEY);
 
   if (existing) {
-    const parsed = JSON.parse(existing);
+    const parsed = JSON.parse(existing) as LicenseData;
+
+    if (!parsed.deviceId) {
+      parsed.deviceId = generateDeviceId();
+      await safeSetItem(LICENSE_KEY, JSON.stringify(parsed));
+    }
+
     memoryLicense = parsed;
     return parsed;
   }
 
   const initial = getDefaultLicense();
+  initial.deviceId = generateDeviceId();
   memoryLicense = initial;
   await safeSetItem(LICENSE_KEY, JSON.stringify(initial));
   return initial;
@@ -97,7 +120,7 @@ export const getLicense = async (): Promise<LicenseData> => {
     return initLicense();
   }
 
-  const parsed = JSON.parse(data);
+  const parsed = JSON.parse(data) as LicenseData;
   memoryLicense = parsed;
   return parsed;
 };
@@ -109,7 +132,7 @@ export const saveLicense = async (license: LicenseData): Promise<void> => {
 
 export const clearLicense = async (): Promise<void> => {
   memoryLicense = null;
-  await safeRemoveItem(LICENSE_KEY);
+  await safeRemoveItem();
 };
 
 export const getTrialInfo = async () => {
@@ -130,6 +153,119 @@ export const getTrialInfo = async () => {
   };
 };
 
+export const activateLicenseOnline = async (
+  code: string
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const current = await getLicense();
+
+    const response = await fetch(`${LICENSE_API_URL}/license/activate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        activationCode: code.trim().toUpperCase(),
+        deviceId: current.deviceId,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        message: data.message || 'Não foi possível ativar a licença.',
+      };
+    }
+
+    const updated: LicenseData = {
+      ...current,
+      isPremium: true,
+      premiumExpiresAt: data.license.expiresAt,
+      activationCode: data.license.activationCode,
+      companyName: data.license.companyName ?? null,
+      ownerName: data.license.ownerName ?? null,
+      lastValidatedAt: new Date().toISOString(),
+    };
+
+    await saveLicense(updated);
+
+    return {
+      success: true,
+      message: data.message || 'Licença ativada com sucesso.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'Falha na conexão com o servidor de licença.',
+    };
+  }
+};
+
+export const checkLicenseOnline = async (): Promise<{
+  success: boolean;
+  hasAccess: boolean;
+  message: string;
+}> => {
+  try {
+    const current = await getLicense();
+
+    if (!current.activationCode) {
+      return {
+        success: false,
+        hasAccess: false,
+        message: 'Nenhuma licença ativada.',
+      };
+    }
+
+    const response = await fetch(`${LICENSE_API_URL}/license/check`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        activationCode: current.activationCode,
+        deviceId: current.deviceId,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success || !data.hasAccess) {
+      return {
+        success: false,
+        hasAccess: false,
+        message: data.message || 'Licença inválida.',
+      };
+    }
+
+    const updated: LicenseData = {
+      ...current,
+      isPremium: true,
+      premiumExpiresAt: data.license.expiresAt,
+      activationCode: data.license.activationCode,
+      companyName: data.license.companyName ?? null,
+      ownerName: data.license.ownerName ?? null,
+      lastValidatedAt: new Date().toISOString(),
+    };
+
+    await saveLicense(updated);
+
+    return {
+      success: true,
+      hasAccess: true,
+      message: data.message || 'Licença válida.',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      hasAccess: false,
+      message: 'Falha ao validar licença online.',
+    };
+  }
+};
+
 export const isLicenseActive = async (): Promise<boolean> => {
   const license = await getLicense();
   const trial = await getTrialInfo();
@@ -142,7 +278,21 @@ export const isLicenseActive = async (): Promise<boolean> => {
     return false;
   }
 
-  return new Date(license.premiumExpiresAt).getTime() > Date.now();
+  const premiumValid = new Date(license.premiumExpiresAt).getTime() > Date.now();
+
+  if (!premiumValid) {
+    return false;
+  }
+
+  if (!license.lastValidatedAt) {
+    return true;
+  }
+
+  const lastValidation = new Date(license.lastValidatedAt);
+  const now = new Date();
+  const daysSinceValidation = diffInDays(lastValidation, now);
+
+  return daysSinceValidation <= OFFLINE_GRACE_DAYS;
 };
 
 export const getLicenseStatus = async () => {
@@ -160,46 +310,11 @@ export const getLicenseStatus = async () => {
     premiumActive,
     premiumExpiresAt: license.premiumExpiresAt,
     activationCode: license.activationCode,
+    companyName: license.companyName,
+    ownerName: license.ownerName,
+    deviceId: license.deviceId,
+    lastValidatedAt: license.lastValidatedAt,
     hasAccess: !trial.expired || premiumActive,
-  };
-};
-
-export const activateLicense = async (
-  code: string
-): Promise<{ success: boolean; message: string }> => {
-  const normalized = code.trim().toUpperCase();
-
-  const validCodes: Record<string, number> = {
-    SOS30: 30,
-    SOS90: 90,
-    SOS365: 365,
-  };
-
-  const days = validCodes[normalized];
-
-  if (!days) {
-    return {
-      success: false,
-      message: 'Código inválido.',
-    };
-  }
-
-  const now = new Date();
-  const expiresAt = addDays(now, days).toISOString();
-  const current = await getLicense();
-
-  const updated: LicenseData = {
-    ...current,
-    isPremium: true,
-    premiumExpiresAt: expiresAt,
-    activationCode: normalized,
-  };
-
-  await saveLicense(updated);
-
-  return {
-    success: true,
-    message: `Licença ativada por ${days} dias.`,
   };
 };
 
@@ -211,5 +326,8 @@ export const deactivatePremium = async (): Promise<void> => {
     isPremium: false,
     premiumExpiresAt: null,
     activationCode: null,
+    companyName: null,
+    ownerName: null,
+    lastValidatedAt: null,
   });
 };
