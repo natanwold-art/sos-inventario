@@ -1,67 +1,77 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import * as Linking from 'expo-linking';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS } from '../src/constants/theme';
 import {
   getLicenseStatus,
   getDaysUntilExpiration,
+  activateLicenseKey,
 } from '../src/services/license';
 
-export default function MyPlanScreen() {
+type LicenseStatus = {
+  premiumActive?: boolean;
+  premiumExpiresAt?: string | null;
+  licenseKey?: string | null;
+};
+
+const SUPPORT_WHATSAPP = '5571988720448';
+const SUPPORT_PIX = '71988720448';
+
+export default function MyPlan() {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
-  const [license, setLicense] = useState<{
-    companyName: string | null;
-    ownerName: string | null;
-    activationCode: string | null;
-    premiumExpiresAt: string | null;
-    lastValidatedAt: string | null;
-    premiumActive: boolean;
-    daysRemaining: number | null;
-  }>({
-    companyName: null,
-    ownerName: null,
-    activationCode: null,
-    premiumExpiresAt: null,
-    lastValidatedAt: null,
-    premiumActive: false,
-    daysRemaining: null,
-  });
+  const [refreshing, setRefreshing] = useState(false);
+  const [activating, setActivating] = useState(false);
 
-  const PIX_KEY = '71988720448';
-  const WHATSAPP_NUMBER = '5571988720448';
+  const [licenseActive, setLicenseActive] = useState(false);
+  const [licenseExpiresAt, setLicenseExpiresAt] = useState<string | null>(null);
+  const [licenseDaysRemaining, setLicenseDaysRemaining] = useState<number | null>(null);
+  const [savedLicenseKey, setSavedLicenseKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadPlan();
-  }, []);
+  const [licenseCode, setLicenseCode] = useState('');
 
-  const loadPlan = async () => {
+  const loadPlanData = async () => {
     try {
-      setLoading(true);
-      const status = await getLicenseStatus();
-      const daysRemaining = await getDaysUntilExpiration();
+      const [status, days] = await Promise.all([
+        getLicenseStatus() as Promise<LicenseStatus>,
+        getDaysUntilExpiration(),
+      ]);
 
-      setLicense({
-        companyName: status.companyName ?? null,
-        ownerName: status.ownerName ?? null,
-        activationCode: status.activationCode ?? null,
-        premiumExpiresAt: status.premiumExpiresAt ?? null,
-        lastValidatedAt: status.lastValidatedAt ?? null,
-        premiumActive: !!status.premiumActive,
-        daysRemaining,
-      });
+      setLicenseActive(!!status?.premiumActive);
+      setLicenseExpiresAt(status?.premiumExpiresAt ?? null);
+      setLicenseDaysRemaining(days ?? null);
+      setSavedLicenseKey(status?.licenseKey ?? null);
     } catch (error) {
+      console.error('Erro ao carregar plano:', error);
       Alert.alert('Erro', 'Não foi possível carregar os dados do plano.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      loadPlanData();
+    }, [])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadPlanData();
   };
 
   const formatDate = (dateString: string | null) => {
@@ -71,268 +81,454 @@ export default function MyPlanScreen() {
 
     if (Number.isNaN(date.getTime())) return '—';
 
-    return date.toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return date.toLocaleDateString('pt-BR');
   };
 
-  const handleCopyPix = async () => {
-    try {
-      await Clipboard.setStringAsync(PIX_KEY);
-      Alert.alert('Copiado', 'Chave Pix copiada com sucesso.');
-    } catch {
-      Alert.alert('Erro', 'Não foi possível copiar a chave Pix.');
+  const getPlanLabel = () => {
+    return licenseActive ? 'Plano Premium Ativo' : 'Plano Inativo';
+  };
+
+  const getPlanColor = () => {
+    return licenseActive ? COLORS.success : COLORS.danger;
+  };
+
+  const getDaysLabel = () => {
+    if (licenseDaysRemaining === null) return 'Sem informação';
+    if (licenseDaysRemaining < 0) return 'Expirado';
+    if (licenseDaysRemaining === 0) return 'Expira hoje';
+    if (licenseDaysRemaining === 1) return '1 dia restante';
+    return `${licenseDaysRemaining} dias restantes`;
+  };
+
+  const handleActivateLicense = async () => {
+    const code = licenseCode.trim();
+
+    if (!code) {
+      Alert.alert('Atenção', 'Digite um código de licença para ativar.');
+      return;
     }
-  };
 
-  const handleOpenWhatsApp = async () => {
     try {
-      const message = encodeURIComponent(
-        `Olá! Quero renovar meu plano do SOS Inventário.\n\nCódigo: ${license.activationCode ?? 'N/A'}`
-      );
+      setActivating(true);
 
-      const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${message}`;
-      const supported = await Linking.canOpenURL(url);
+      const result = await activateLicenseKey(code);
 
-      if (!supported) {
-        Alert.alert('Erro', 'Não foi possível abrir o WhatsApp.');
+      if (result?.success) {
+        Alert.alert('Sucesso', 'Licença ativada com sucesso.');
+        setLicenseCode('');
+        await loadPlanData();
         return;
       }
 
-      await Linking.openURL(url);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível abrir o WhatsApp.');
-    }
-  };
-
-  const handleRenewPlan = async () => {
-    try {
-      await Clipboard.setStringAsync(PIX_KEY);
-
+      Alert.alert('Licença inválida', result?.message || 'Não foi possível ativar a licença.');
+    } catch (error: any) {
+      console.error('Erro ao ativar licença:', error);
       Alert.alert(
-        'Renovação do plano',
-        'A chave Pix foi copiada. Agora envie o comprovante pelo WhatsApp para liberar seu novo período.',
-        [
-          { text: 'Fechar', style: 'cancel' },
-          { text: 'Falar no WhatsApp', onPress: handleOpenWhatsApp },
-        ]
+        'Erro',
+        error?.message || 'Ocorreu um erro ao tentar ativar o código de licença.'
       );
-    } catch {
-      Alert.alert('Erro', 'Não foi possível iniciar a renovação.');
+    } finally {
+      setActivating(false);
     }
   };
 
-  const isExpiringSoon =
-    typeof license.daysRemaining === 'number' && license.daysRemaining <= 7;
+  const handlePlanAction = () => {
+    router.push('/subscription' as any);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Carregando informações do plano...</Text>
+      </View>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Meu Plano</Text>
-      <Text style={styles.subtitle}>
-        Acompanhe o status da sua licença e renove quando precisar.
-      </Text>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} />
+      }
+    >
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color={COLORS.text} />
+        </TouchableOpacity>
 
-      <View style={styles.statusCard}>
-        <View style={styles.statusRow}>
+        <View style={styles.headerTextWrap}>
+          <Text style={styles.title}>Meu Plano</Text>
+          <Text style={styles.subtitle}>Gerencie sua licença, pagamento e renovação</Text>
+        </View>
+      </View>
+
+      <View style={styles.planCard}>
+        <View style={styles.planTopRow}>
+          <View style={[styles.statusDot, { backgroundColor: getPlanColor() }]} />
+          <Text style={styles.planStatus}>{getPlanLabel()}</Text>
+        </View>
+
+        <Text style={styles.planName}>SOS Inventário Premium</Text>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Vencimento</Text>
+          <Text style={styles.infoValue}>{formatDate(licenseExpiresAt)}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Status</Text>
+          <Text style={[styles.infoValue, { color: getPlanColor() }]}>{getDaysLabel()}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Código atual</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>
+            {savedLicenseKey || 'Nenhum código vinculado'}
+          </Text>
+        </View>
+
+        <TouchableOpacity style={styles.planButton} onPress={handlePlanAction} activeOpacity={0.85}>
           <Ionicons
-            name={license.premiumActive ? 'checkmark-circle' : 'alert-circle'}
-            size={22}
-            color={license.premiumActive ? '#16A34A' : '#DC2626'}
+            name={licenseActive ? 'refresh-outline' : 'card-outline'}
+            size={18}
+            color="#FFFFFF"
           />
-          <Text
-            style={[
-              styles.statusText,
-              { color: license.premiumActive ? '#16A34A' : '#DC2626' },
-            ]}
-          >
-            {license.premiumActive ? 'Plano ativo' : 'Plano inativo'}
+          <Text style={styles.planButtonText}>
+            {licenseActive ? 'Renovar plano' : 'Escolher plano'}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
-      {isExpiringSoon && (
-        <View style={styles.warningCard}>
-          <Text style={styles.warningTitle}>Seu plano está perto de vencer</Text>
-          <Text style={styles.warningText}>
-            Faltam {license.daysRemaining} dias para o vencimento.
-          </Text>
+      <View style={styles.activationCard}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="key-outline" size={20} color={COLORS.primary} />
+          <Text style={styles.sectionTitle}>Ativar código de licença</Text>
         </View>
-      )}
 
-      <View style={styles.infoCard}>
-        <Text style={styles.label}>Empresa</Text>
-        <Text style={styles.value}>{license.companyName || '—'}</Text>
-
-        <Text style={styles.label}>Responsável</Text>
-        <Text style={styles.value}>{license.ownerName || '—'}</Text>
-
-        <Text style={styles.label}>Código ativo</Text>
-        <Text style={styles.value}>{license.activationCode || '—'}</Text>
-
-        <Text style={styles.label}>Vencimento</Text>
-        <Text style={styles.value}>{formatDate(license.premiumExpiresAt)}</Text>
-
-        <Text style={styles.label}>Dias restantes</Text>
-        <Text style={styles.value}>
-          {license.daysRemaining !== null ? `${license.daysRemaining} dias` : '—'}
+        <Text style={styles.sectionDescription}>
+          Se você já comprou um plano, digite abaixo o código da licença para liberar o acesso.
         </Text>
 
-        <Text style={styles.label}>Última validação</Text>
-        <Text style={styles.value}>{formatDate(license.lastValidatedAt)}</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Digite seu código de licença"
+          placeholderTextColor={COLORS.textLight}
+          value={licenseCode}
+          onChangeText={setLicenseCode}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+
+        <TouchableOpacity
+          style={[styles.activateButton, activating && styles.buttonDisabled]}
+          onPress={handleActivateLicense}
+          disabled={activating}
+          activeOpacity={0.85}
+        >
+          {activating ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.activateButtonText}>Ativar código</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.infoCard}>
-        <Text style={styles.sectionTitle}>Renovação</Text>
-        <Text style={styles.helpText}>
-          Para renovar seu plano, faça o pagamento via Pix e fale conosco pelo
-          WhatsApp para liberar um novo período.
+      <View style={styles.paymentCard}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="wallet-outline" size={20} color={COLORS.primary} />
+          <Text style={styles.sectionTitle}>Pagamento e suporte</Text>
+        </View>
+
+        <Text style={styles.sectionDescription}>
+          Para contratar ou renovar manualmente, use os canais abaixo.
         </Text>
 
-        <Text style={styles.label}>Chave Pix</Text>
-        <Text style={styles.value}>{PIX_KEY}</Text>
+        <View style={styles.contactBox}>
+          <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+          <View style={styles.contactTextWrap}>
+            <Text style={styles.contactLabel}>WhatsApp</Text>
+            <Text style={styles.contactValue}>+{SUPPORT_WHATSAPP}</Text>
+          </View>
+        </View>
 
-        <TouchableOpacity style={styles.primaryButton} onPress={handleRenewPlan}>
-          <Text style={styles.primaryButtonText}>Renovar plano</Text>
-        </TouchableOpacity>
+        <View style={styles.contactBox}>
+          <Ionicons name="qr-code-outline" size={20} color={COLORS.primary} />
+          <View style={styles.contactTextWrap}>
+            <Text style={styles.contactLabel}>PIX</Text>
+            <Text style={styles.contactValue}>{SUPPORT_PIX}</Text>
+          </View>
+        </View>
 
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleCopyPix}>
-          <Text style={styles.secondaryButtonText}>Copiar chave Pix</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.whatsappButton} onPress={handleOpenWhatsApp}>
-          <Text style={styles.whatsappButtonText}>Falar no WhatsApp</Text>
-        </TouchableOpacity>
+        <Text style={styles.paymentNote}>
+          Após o pagamento, você pode receber o código de ativação e inserir logo acima no campo de licença.
+        </Text>
       </View>
 
-      {loading && (
-        <Text style={styles.loadingText}>Carregando informações do plano...</Text>
-      )}
+      <View style={styles.benefitsCard}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="star-outline" size={20} color={COLORS.primary} />
+          <Text style={styles.sectionTitle}>Benefícios do plano</Text>
+        </View>
+
+        <View style={styles.benefitItem}>
+          <Ionicons name="checkmark" size={18} color={COLORS.success} />
+          <Text style={styles.benefitText}>Acesso completo aos recursos premium</Text>
+        </View>
+
+        <View style={styles.benefitItem}>
+          <Ionicons name="checkmark" size={18} color={COLORS.success} />
+          <Text style={styles.benefitText}>Gestão mais rápida e profissional do estoque</Text>
+        </View>
+
+        <View style={styles.benefitItem}>
+          <Ionicons name="checkmark" size={18} color={COLORS.success} />
+          <Text style={styles.benefitText}>Mais controle para operação e reposição</Text>
+        </View>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    backgroundColor: '#F7F8FA',
-    padding: 24,
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  content: {
+    padding: SPACING.md,
+    paddingBottom: SPACING.xl,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textSecondary,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  headerTextWrap: {
+    flex: 1,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 10,
+    fontWeight: '800',
+    color: COLORS.text,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#4B5563',
-    lineHeight: 22,
-    marginBottom: 20,
+    marginTop: 4,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
   },
-  statusCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
+  planCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  statusRow: {
+  planTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  planStatus: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  planName: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  infoLabel: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  infoValue: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+    textAlign: 'right',
+  },
+  planButton: {
+    marginTop: SPACING.lg,
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  planButtonText: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+  },
+  activationCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  paymentCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  sectionDescription: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  input: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 14,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text,
+    marginBottom: SPACING.md,
+  },
+  activateButton: {
+    backgroundColor: COLORS.success,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  activateButtonText: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  contactBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  contactTextWrap: {
+    marginLeft: SPACING.sm,
+    flex: 1,
+  },
+  contactLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  contactValue: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  paymentNote: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+    marginTop: SPACING.sm,
+  },
+  benefitsCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  benefitItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    marginTop: SPACING.sm,
   },
-  statusText: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  warningCard: {
-    backgroundColor: '#FFF4E5',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#9A3412',
-    marginBottom: 6,
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#7C2D12',
-  },
-  infoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  helpText: {
-    fontSize: 14,
-    color: '#4B5563',
-    lineHeight: 21,
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  primaryButton: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  secondaryButton: {
-    backgroundColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  secondaryButtonText: {
-    color: '#111827',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  whatsappButton: {
-    backgroundColor: '#16A34A',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  whatsappButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  loadingText: {
-    textAlign: 'center',
-    color: '#6B7280',
-    marginTop: 8,
-    marginBottom: 20,
+  benefitText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
   },
 });
