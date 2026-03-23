@@ -23,6 +23,7 @@ import {
 import {
   getLicenseStatus,
   getDaysUntilExpiration,
+  validateLicenseAndSync,
 } from '../src/services/license';
 
 export default function Dashboard() {
@@ -35,10 +36,18 @@ export default function Dashboard() {
   const [licenseActive, setLicenseActive] = useState(false);
   const [licenseExpiresAt, setLicenseExpiresAt] = useState<string | null>(null);
   const [licenseDaysRemaining, setLicenseDaysRemaining] = useState<number | null>(null);
+  const [trialRemainingDays, setTrialRemainingDays] = useState(0);
+  const [trialExpired, setTrialExpired] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
+      const validation = await validateLicenseAndSync();
+
+      if (validation.changed && validation.blocked) {
+        Alert.alert('Licença desativada', validation.message);
+      }
+
       const [products, lowStock, movements, totalValue, riskValue] = await Promise.all([
         getProductCount(),
         getLowStockCount(),
@@ -58,6 +67,8 @@ export default function Dashboard() {
       setLicenseActive(!!licenseStatus.premiumActive);
       setLicenseExpiresAt(licenseStatus.premiumExpiresAt ?? null);
       setLicenseDaysRemaining(licenseDays);
+      setTrialRemainingDays(licenseStatus.trialRemainingDays ?? 0);
+      setTrialExpired(!!licenseStatus.trialExpired);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -142,17 +153,41 @@ export default function Dashboard() {
       <View style={styles.planBanner}>
         <View style={styles.planBannerLeft}>
           <Ionicons
-            name={licenseActive ? 'shield-checkmark' : 'alert-circle'}
+            name={
+              licenseActive
+                ? 'shield-checkmark'
+                : !trialExpired
+                ? 'time-outline'
+                : 'alert-circle'
+            }
             size={22}
-            color={licenseActive ? COLORS.success : COLORS.danger}
+            color={
+              licenseActive
+                ? COLORS.success
+                : !trialExpired
+                ? COLORS.warning
+                : COLORS.danger
+            }
           />
           <View style={styles.planBannerTextWrap}>
             <Text style={styles.planBannerTitle}>
-              {licenseActive ? 'Plano ativo' : 'Plano inativo'}
+              {licenseActive
+                ? 'Plano ativo'
+                : !trialExpired
+                ? 'Teste grátis ativo'
+                : 'Plano inativo'}
             </Text>
+
             <Text style={styles.planBannerSubtitle}>
-              Vencimento: {formatLicenseDate(licenseExpiresAt)}
-              {licenseDaysRemaining !== null ? ` • ${licenseDaysRemaining} dias restantes` : ''}
+              {licenseActive
+                ? `Vencimento: ${formatLicenseDate(licenseExpiresAt)}${
+                    licenseDaysRemaining !== null ? ` • ${licenseDaysRemaining} dias restantes` : ''
+                  }`
+                : !trialExpired
+                ? `${trialRemainingDays} ${
+                    trialRemainingDays === 1 ? 'dia restante' : 'dias restantes'
+                  } no teste grátis`
+                : 'Seu teste grátis terminou'}
             </Text>
           </View>
         </View>
@@ -675,7 +710,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SPACING.md,
   },
-
   actionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -759,7 +793,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
   },
-
   recentSection: {
     marginTop: SPACING.sm,
   },

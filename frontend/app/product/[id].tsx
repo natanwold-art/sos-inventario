@@ -141,14 +141,6 @@ export default function ProductDetail() {
     }
   };
 
-  const handleViewSuppliers = () => {
-    Alert.alert(
-      'Fornecedores',
-      'Esta funcionalidade estará disponível em breve na versão premium!',
-      [{ text: 'OK' }]
-    );
-  };
-
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -350,15 +342,6 @@ export default function ProductDetail() {
             </View>
           )}
         </View>
-
-        {/* Supplier Button (Mockado) */}
-        <TouchableOpacity style={styles.supplierButton} onPress={handleViewSuppliers}>
-          <Ionicons name="business-outline" size={22} color={COLORS.primary} />
-          <Text style={styles.supplierButtonText}>Ver fornecedores mais baratos</Text>
-          <View style={styles.premiumBadge}>
-            <Text style={styles.premiumBadgeText}>PREMIUM</Text>
-          </View>
-        </TouchableOpacity>
 
         {/* Delete Button */}
         <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
@@ -610,17 +593,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.md,
     color: COLORS.primary,
     fontWeight: '500',
-  },
-  premiumBadge: {
-    backgroundColor: COLORS.warning + '20',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: BORDER_RADIUS.sm,
-  },
-  premiumBadgeText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.warning,
-    fontWeight: '700',
   },
   deleteButton: {
     flexDirection: 'row',

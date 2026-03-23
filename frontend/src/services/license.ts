@@ -432,3 +432,45 @@ export const deactivatePremium = async (): Promise<void> => {
     lastValidatedAt: null,
   });
 };
+
+export const validateLicenseAndSync = async (): Promise<{
+  changed: boolean;
+  blocked: boolean;
+  message: string;
+}> => {
+  try {
+    const current = await getLicense();
+
+    if (!current.activationCode) {
+      return {
+        changed: false,
+        blocked: false,
+        message: '',
+      };
+    }
+
+    const result = await checkLicenseOnline();
+
+    if (result.success && result.hasAccess) {
+      return {
+        changed: false,
+        blocked: false,
+        message: '',
+      };
+    }
+
+    await deactivatePremium();
+
+    return {
+      changed: true,
+      blocked: true,
+      message: result.message || 'Sua licença foi desvinculada ou bloqueada.',
+    };
+  } catch (error) {
+    return {
+      changed: false,
+      blocked: false,
+      message: '',
+    };
+  }
+};
