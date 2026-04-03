@@ -121,8 +121,16 @@ export default function SubscriptionScreen() {
       <View style={styles.heroCard}>
         <Ionicons name="shield-checkmark-outline" size={42} color={COLORS.primary} />
         <Text style={styles.title}>Ative o SOS Inventário</Text>
+        <Text style={styles.heroBadge}>Ideal para adegas, mercadinhos e pequenos comércios</Text>
         <Text style={styles.subtitle}>
           Continue usando o app com acesso ao estoque, dashboard, alertas e recursos premium.
+        </Text>
+      </View>
+
+      <View style={styles.offlineInfoCard}>
+        <Ionicons name="cloud-offline-outline" size={20} color={COLORS.primary} />
+        <Text style={styles.offlineInfoText}>
+          O controle do estoque funciona offline. Internet é usada apenas para validar a licença.
         </Text>
       </View>
 
@@ -161,7 +169,7 @@ export default function SubscriptionScreen() {
           <Text style={styles.planName}>Plano Mensal</Text>
           <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
         </View>
-        <Text style={styles.planPrice}>R$ 29,90</Text>
+        <Text style={styles.planPrice}>R$ 44,90</Text>
         <Text style={styles.planDesc}>Acesso por 30 dias</Text>
       </View>
 
@@ -170,16 +178,20 @@ export default function SubscriptionScreen() {
           <Text style={styles.planName}>Plano Trimestral</Text>
           <Ionicons name="layers-outline" size={20} color={COLORS.primary} />
         </View>
-        <Text style={styles.planPrice}>R$ 79,90</Text>
+        <Text style={styles.planPrice}>R$ 89,90</Text>
         <Text style={styles.planDesc}>Acesso por 90 dias</Text>
       </View>
 
-      <View style={styles.planCard}>
+      <View style={[styles.planCard, styles.featuredPlanCard]}>
+        <View style={styles.bestValueBadge}>
+          <Text style={styles.bestValueBadgeText}>Melhor custo-benefício</Text>
+        </View>
+
         <View style={styles.planTop}>
           <Text style={styles.planName}>Plano Anual</Text>
           <Ionicons name="ribbon-outline" size={20} color={COLORS.primary} />
         </View>
-        <Text style={styles.planPrice}>R$ 249,90</Text>
+        <Text style={styles.planPrice}>R$ 449,90</Text>
         <Text style={styles.planDesc}>Acesso por 365 dias</Text>
       </View>
 
@@ -280,7 +292,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
     padding: SPACING.lg,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -293,14 +305,44 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
     marginTop: 10,
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'center',
+  },
+  heroBadge: {
+    backgroundColor: `${COLORS.primary}15`,
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
   subtitle: {
     fontSize: 15,
     color: COLORS.textSecondary,
     lineHeight: 22,
     textAlign: 'center',
+  },
+  offlineInfoCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  offlineInfoText: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   alertBox: {
     backgroundColor: '#FFF4E5',
@@ -362,6 +404,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
+  },
+  featuredPlanCard: {
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    position: 'relative',
+  },
+  bestValueBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 10,
+  },
+  bestValueBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
   planTop: {
     flexDirection: 'row',

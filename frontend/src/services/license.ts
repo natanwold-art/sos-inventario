@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LICENSE_KEY = '@sos_inventario_license';
-const DEFAULT_TRIAL_DAYS = 7;
+const DEFAULT_TRIAL_DAYS = 30;
 const LICENSE_API_URL = 'https://sos-inventario-license-api.onrender.com';
 const OFFLINE_GRACE_DAYS = 7;
 
